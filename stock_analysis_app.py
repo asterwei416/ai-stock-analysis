@@ -27,22 +27,39 @@ def get_stock_data(symbol, api_key):
         DataFrame 包含日期、開盤、最高、最低、收盤、成交量
     """
     try:
-        # FMP API 端點 - 獲取完整歷史數據
-        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
-        params = {"apikey": api_key}
+        # FMP API 端點 - 使用 stable/historical-price-eod/full
+        url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+        params = {
+            "symbol": symbol,
+            "apikey": api_key
+        }
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         
         data = response.json()
         
-        # 檢查 API 回應
-        if "historical" not in data:
+        # stable API 直接返回 list 格式
+        if not data or not isinstance(data, list) or len(data) == 0:
             st.error(f"❌ 無法找到股票代碼 '{symbol}' 的數據,請確認代碼是否正確")
             return None
         
         # 轉換為 DataFrame
-        df = pd.DataFrame(data["historical"])
+        df = pd.DataFrame(data)
+        
+        # 檢查並標準化欄位名稱（新 API 可能使用大寫）
+        # 將所有欄位名稱轉換為小寫以確保一致性
+        df.columns = df.columns.str.lower()
+        
+        # 確認必要欄位存在
+        required_fields = ['date', 'open', 'high', 'low', 'close', 'volume']
+        missing_fields = [field for field in required_fields if field not in df.columns]
+        
+        if missing_fields:
+            st.error(f"❌ API 返回的數據缺少必要欄位: {', '.join(missing_fields)}")
+            st.info(f"可用欄位: {', '.join(df.columns.tolist())}")
+            return None
+        
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date", ascending=True).reset_index(drop=True)
         
@@ -113,7 +130,7 @@ def calculate_moving_averages(df):
 
 def plot_candlestick_chart(df, symbol):
     """
-    繪製專業 K線圖與移動平均線
+    繪製專業 K線圖與移動平均線 (Neo-Brutalism 風格)
     
     參數:
         df: 包含股價和移動平均線的 DataFrame
@@ -125,7 +142,7 @@ def plot_candlestick_chart(df, symbol):
     # 創建 K線圖
     fig = go.Figure()
     
-    # 添加 Candlestick K線圖
+    # 添加 Candlestick K線圖 (Neo-Brutalism 配色)
     fig.add_trace(go.Candlestick(
         x=df["date"],
         open=df["open"],
@@ -133,16 +150,19 @@ def plot_candlestick_chart(df, symbol):
         low=df["low"],
         close=df["close"],
         name="K線圖",
-        increasing_line_color="#FF4B4B",  # 上漲為紅色
-        decreasing_line_color="#00CC96",  # 下跌為綠色
+        increasing_line_color="#00E676",  # 螢光綠 (上漲)
+        increasing_fillcolor="#00E676",
+        decreasing_line_color="#FF1744",  # 鮮紅 (下跌)
+        decreasing_fillcolor="#FF1744",
+        line=dict(width=2)
     ))
     
-    # 添加移動平均線
+    # 添加移動平均線 (Neo-Brutalism 高對比配色)
     colors = {
-        "MA5": "#FFD700",   # 金色
-        "MA10": "#FF6B6B",  # 淺紅色
-        "MA20": "#4ECDC4",  # 青色
-        "MA60": "#A78BFA"   # 紫色
+        "MA5": "#FF6B35",   # 活力橙
+        "MA10": "#FFD23F",  # 亮黃
+        "MA20": "#00B0FF",  # 天藍
+        "MA60": "#000000"   # 純黑
     }
     
     for ma_name, color in colors.items():
@@ -152,31 +172,76 @@ def plot_candlestick_chart(df, symbol):
                 y=df[ma_name],
                 mode="lines",
                 name=ma_name,
-                line=dict(color=color, width=2)
+                line=dict(color=color, width=3)  # 粗線條
             ))
     
     # 圖表配置
     first_date = df["date"].iloc[0].strftime("%Y-%m-%d")
     last_date = df["date"].iloc[-1].strftime("%Y-%m-%d")
     
+    # Neo-Brutalism 風格設定
     fig.update_layout(
-        title=f"{symbol} 股價 K線圖與技術指標 ({first_date} ~ {last_date})",
-        xaxis_title="日期",
-        yaxis_title="價格 (USD)",
-        template="plotly_white",
-        height=600,
+        title=dict(
+            text=f"<b>{symbol} 股價技術分析</b><br><sub>{first_date} ~ {last_date}</sub>",
+            font=dict(
+                size=28,
+                color="#000000",
+                family="Space Grotesk, sans-serif"
+            ),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis_title=dict(
+            text="<b>日期</b>",
+            font=dict(size=16, color="#000000")
+        ),
+        yaxis_title=dict(
+            text="<b>價格 (USD)</b>",
+            font=dict(size=16, color="#000000")
+        ),
+        plot_bgcolor="#FFFFFF",  # 白色背景
+        paper_bgcolor="#FFFFFF",
+        height=650,
         hovermode="x unified",
+        font=dict(
+            family="IBM Plex Mono, monospace",
+            size=14,
+            color="#000000"
+        ),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
+            y=-0.4,  # 大幅下移圖例
+            xanchor="center",
+            x=0.5,
+            bgcolor="#FFFFFF",
+            bordercolor="#000000",
+            borderwidth=3,
+            font=dict(size=12, color="#000000")
         ),
         xaxis=dict(
             rangeslider=dict(visible=False),
-            type="date"
-        )
+            type="date",
+            showgrid=True,
+            gridcolor="#E0E0E0",
+            gridwidth=1,
+            showline=True,
+            linewidth=3,
+            linecolor="#000000",
+            mirror=True,
+            title_standoff=15  # 微調標題距離
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="#E0E0E0",
+            gridwidth=1,
+            showline=True,
+            linewidth=3,
+            linecolor="#000000",
+            mirror=True
+        ),
+        # 增加更多下邊距以容納圖例
+        margin=dict(l=60, r=60, t=140, b=160)
     )
     
     return fig
@@ -197,7 +262,176 @@ def generate_ai_analysis(symbol, df, gemini_api_key):
     try:
         # 配置 Gemini API
         genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        
+        # 嘗試使用可用的模型
+        # 使用 Gemini 2.5 Flash - 用戶指定的先進版本
+        try:
+            model = genai.GenerativeModel("gemini-2.5-flash")
+        except Exception as model_error:
+            st.error(f"❌ 無法載入 Gemini 模型: {str(model_error)}")
+            st.info("💡 請運行 `list_gemini_models.py` 查看您的 API Key 支援的模型")
+            return None
+        
+        # 準備分析數據
+        first_date = df["date"].iloc[0].strftime("%Y-%m-%d")
+        last_date = df["date"].iloc[-1].strftime("%Y-%m-%d")
+        start_price = df["close"].iloc[0]
+        end_price = df["close"].iloc[-1]
+        price_change = ((end_price - start_price) / start_price) * 100
+        
+        # 轉換數據為 JSON 格式 (最近 60 筆數據)
+        recent_data = df.tail(60).copy()
+        recent_data["date"] = recent_data["date"].dt.strftime("%Y-%m-%d")
+        data_json = recent_data[["date", "open", "high", "low", "close", "volume", "MA5", "MA10", "MA20", "MA60"]].to_json(
+            orient="records", 
+            indent=2,
+            force_ascii=False
+        )
+        
+        # 構建 AI 提示語
+        system_message = """你是一位專業的技術分析師,專精於股票技術分析和歷史數據解讀。你的職責包括:
+
+1. 客觀描述股票價格的歷史走勢和技術指標狀態
+2. 解讀歷史市場數據和交易量變化模式
+3. 識別技術面的歷史支撐阻力位
+4. 提供純教育性的技術分析知識
+
+重要原則:
+- 僅提供歷史數據分析和技術指標解讀,絕不提供任何投資建議或預測
+- 保持完全客觀中立的分析態度
+- 使用專業術語但保持易懂
+- 所有分析僅供教育和研究目的
+- 強調技術分析的局限性和不確定性
+- 使用繁體中文回答
+
+嚴格的表達方式要求:
+- 使用「歷史數據顯示」、「技術指標反映」、「過去走勢呈現」等客觀描述
+- 避免「可能性」、「預期」、「建議」、「關注」等暗示性用詞
+- 禁用「如果...則...」的假設句型,改用「歷史上當...時,曾出現...現象」
+- 不提供具體價位的操作參考點,僅描述技術位階的歷史表現
+- 強調「歷史表現不代表未來結果」
+- 避免任何可能被解讀為操作指引的表達
+
+**格式規範(非常重要):**
+- 只使用 ## 標記主要章節標題(如「## 1. 趨勢分析」)
+- **絕對不要**在段落內容中使用 # 或 ## 符號
+- 段落內容使用純文字或項目符號(-)
+- 數字和數據直接寫在段落中,不使用任何標題格式
+- 使用 **粗體** 適度強調關鍵詞,但保持文字大小一致
+- 避免混用不同的標題級別造成字體大小混亂
+
+免責聲明:所提供的分析內容純粹基於歷史數據的技術解讀,僅供教育和研究參考,不構成任何投資建議或未來走勢預測。歷史表現不代表未來結果。"""
+        
+        user_prompt = f"""請基於以下股票歷史數據進行深度技術分析:
+
+### 基本資訊
+- 股票代號: {symbol}
+- 分析期間: {first_date} 至 {last_date}
+- 期間價格變化: {price_change:.2f}% (從 ${start_price:.2f} 變化到 ${end_price:.2f})
+
+### 完整交易數據
+以下是該期間的完整交易數據,包含日期、開盤價、最高價、最低價、收盤價、成交量和移動平均線:
+{data_json}
+
+### 分析要求
+
+請按照以下架構進行分析。**重要:請只使用 ## 標記主要章節,段落內容不要使用任何標題符號**
+
+## 1. 趨勢分析
+- 整體趨勢方向(上升、下降、盤整)
+- 關鍵支撐位和阻力位識別  
+- 趨勢強度評估
+
+## 2. 技術指標分析
+- 移動平均線分析(短期與長期MA的關係)
+- 價格與移動平均線的相對位置
+- 成交量與價格變動的關聯性
+
+## 3. 價格行為分析
+- 重要的價格突破點
+- 波動性評估
+- 關鍵的轉折點識別
+
+## 4. 風險評估  
+- 當前價位的風險等級
+- 潛在的支撐和阻力區間
+- 市場情緒指標
+
+## 5. 市場觀察
+- 短期技術面觀察(1-2週)
+- 中期技術面觀察(1-3個月)
+- 關鍵價位觀察點
+- 技術面風險因子
+
+### 輸出格式要求
+- 使用 ## 標記主要章節(如上所示)
+- **段落內容絕對不使用 # 或 ## 符號,保持文字大小一致**
+- 使用項目符號(-)或段落文字組織內容
+- 數據和數字直接寫在段落中,不用任何特殊格式包裹
+- 使用 **粗體** 適度強調關鍵詞
+- 條理清晰,提供具體數據支撐
+- 避免過於絕對的預測,強調分析的局限性
+
+分析目標: {symbol}"""
+        
+        # 調用 Gemini API
+        response = model.generate_content(
+            [system_message, user_prompt],
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                top_p=0.9,
+                max_output_tokens=8192,  # 增加 Token 限制以避免截斷
+            ),
+            safety_settings={
+                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            }
+        )
+        
+        # 安全地獲取回應文本
+        if response.candidates:
+            # 檢查是否有內容部分
+            if response.candidates[0].content.parts:
+                return response.text
+            # 檢查是否因為達到 Token 限制而停止
+            elif response.candidates[0].finish_reason == 2: # FinishReason.MAX_TOKENS
+                st.warning("⚠️ 分析內容可能因長度限制而被截斷")
+                # 嘗試獲取已生成的內容 (如果有)
+                try:
+                    return response.candidates[0].content.parts[0].text
+                except:
+                    return "⚠️ 分析生成不完整，請嘗試縮短分析期間或重試。"
+            else:
+                finish_reason = response.candidates[0].finish_reason
+                st.warning(f"⚠️ AI 停止生成，原因代碼: {finish_reason}")
+                return None
+        else:
+            st.warning("⚠️ AI 未返回任何候選回應")
+            return None
+    
+    except Exception as e:
+        error_msg = str(e)
+        
+        # 檢查是否為配額錯誤
+        if "429" in error_msg or "quota" in error_msg.lower():
+            st.error("❌ Gemini API 配額已超限")
+            st.warning("""
+            ### 💡 解決方案:
+            
+            1. **等待配額重置** (通常幾分鐘到1小時)
+            2. **升級 API 方案** 到付費版本以獲得更高配額
+            3. **檢查使用情況**: [訪問 Gemini API 控制台](https://ai.dev/usage?tab=rate-limit)
+            4. **運行模型測試**: 執行 `list_gemini_models.py` 查看可用模型
+            
+            [了解更多關於配額限制](https://ai.google.dev/gemini-api/docs/rate-limits)
+            """)
+        else:
+            st.error(f"❌ AI 分析失敗: {error_msg}")
+            st.info("💡 請確認您的 Gemini API Key 是否正確,並檢查 API 配額")
+        
+        return None
         
         # 準備分析數據
         first_date = df["date"].iloc[0].strftime("%Y-%m-%d")
@@ -309,6 +543,17 @@ def generate_ai_analysis(symbol, df, gemini_api_key):
 
 # ==================== Streamlit 主程式 ====================
 
+def load_neo_brutalism_css():
+    """
+    載入 Neo-Brutalism 風格的自定義 CSS
+    """
+    css_path = ".streamlit/neo_brutalism.css"
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.warning("⚠️ Neo-Brutalism CSS 檔案未找到,使用預設樣式")
+
 def main():
     """主程式入口"""
     
@@ -319,6 +564,9 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
+    # 載入 Neo-Brutalism 樣式
+    load_neo_brutalism_css()
     
     # 主標題
     st.title("📈 AI 股票趨勢分析系統")
@@ -452,7 +700,7 @@ def main():
         
         # 繪製圖表
         candlestick_fig = plot_candlestick_chart(processed_data, symbol)
-        st.plotly_chart(candlestick_fig, use_container_width=True)
+        st.plotly_chart(candlestick_fig, width="stretch")
         
         # ==================== 基本統計資訊 ====================
         st.header("📋 基本統計資訊")
@@ -511,7 +759,7 @@ def main():
         
         st.dataframe(
             display_data_formatted,
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
